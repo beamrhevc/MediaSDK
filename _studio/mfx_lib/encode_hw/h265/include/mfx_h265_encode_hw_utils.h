@@ -415,6 +415,7 @@ namespace ExtBuffer
          MFX_EXTBUFF_CODING_OPTION,
          MFX_EXTBUFF_CODING_OPTION2,
          MFX_EXTBUFF_CODING_OPTION3,
+         MFX_EXTBUFF_CODING_OPTION_CABR,
          MFX_EXTBUFF_CODING_OPTION_SPSPPS,
          MFX_EXTBUFF_AVC_REFLIST_CTRL,
          MFX_EXTBUFF_AVC_TEMPORAL_LAYERS,
@@ -439,6 +440,7 @@ namespace ExtBuffer
         EXTBUF(mfxExtCodingOption,          MFX_EXTBUFF_CODING_OPTION);
         EXTBUF(mfxExtCodingOption2,         MFX_EXTBUFF_CODING_OPTION2);
         EXTBUF(mfxExtCodingOption3,         MFX_EXTBUFF_CODING_OPTION3);
+        EXTBUF(mfxExtCodingOptionCABR,      MFX_EXTBUFF_CODING_OPTION_CABR);
         EXTBUF(mfxExtCodingOptionDDI,       MFX_EXTBUFF_DDI);
         EXTBUF(mfxExtCodingOptionSPSPPS,    MFX_EXTBUFF_CODING_OPTION_SPSPPS);
         EXTBUF(mfxExtAVCRefListCtrl,        MFX_EXTBUFF_AVC_REFLIST_CTRL);
@@ -780,6 +782,7 @@ public:
         mfxExtCodingOption          CO;
         mfxExtCodingOption2         CO2;
         mfxExtCodingOption3         CO3;
+        mfxExtCodingOptionCABR      CO_CABR;
         mfxExtCodingOptionDDI       DDI;
         mfxExtAvcTemporalLayers     AVCTL;
         mfxExtVideoSignalInfo       VSI;

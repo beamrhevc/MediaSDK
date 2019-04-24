@@ -47,6 +47,10 @@ public:
         , m_bInit(false)
         , m_runtimeErr(MFX_ERR_NONE)
         , m_brc(nullptr)
+        , m_bBsOut(false)
+        , m_bRecOut(false)
+        , m_bits_sysmem(nullptr)
+        , m_recon_sysmem(nullptr)
     {
         ZeroParams();
 
@@ -176,6 +180,8 @@ protected:
     mfxStatus PrepareTask(Task& task);
     mfxStatus FreeTask(Task& task);
     mfxStatus WaitForQueringTask(Task& task);
+    mfxStatus CopyBitStreamOut(Task* taskForQuery, mfxBitstream* bs, ENCODE_PACKEDHEADER_DATA* pSEI, mfxU32 SEI_len);
+    mfxStatus CopyReconNV12Out(Task* taskForQuery);
 
     std::unique_ptr<DriverEncoder>  m_ddi;
     VideoCORE                      *m_core;
@@ -201,6 +207,16 @@ protected:
     bool                            m_bInit;
     mfxStatus                       m_runtimeErr;
     BrcIface*                       m_brc;
+
+    bool                            m_bBsOut;
+    bool                            m_bRecOut;
+
+    mfxU8 *                         m_bits_sysmem;
+    mfxU8 *                         m_bitstr;
+
+    mfxU8 *                         m_recon_sysmem;
+    mfxU8 *                         m_recon_y;
+    mfxU8 *                         m_recon_uv; // nv12
 
 };
 

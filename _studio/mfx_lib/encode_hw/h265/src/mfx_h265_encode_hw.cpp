@@ -222,6 +222,9 @@ mfxStatus LoadSPSPPS(MfxVideoParam& par, mfxExtCodingOptionSPSPPS* pSPSPPS)
     return sts;
 }
 #define printCaps(arg) printf("Caps: %s %d\n", #arg, m_caps.arg);
+#define DALIGN_4096 (4096)
+#define DALIGN_PTRTO(ptr,offset) {\
+}
 mfxStatus MFXVideoENCODEH265_HW::InitImpl(mfxVideoParam *par)
 {
     MFX_AUTO_LTRACE(MFX_TRACE_LEVEL_API, "MFXVideoENCODEH265_HW::InitImpl");
@@ -230,6 +233,43 @@ mfxStatus MFXVideoENCODEH265_HW::InitImpl(mfxVideoParam *par)
 
     sts = ExtBuffer::CheckBuffers(*par);
     MFX_CHECK_STS(sts);
+
+    mfxExtCodingOptionCABR * CO_CABR = ExtBuffer::Get(*par);
+
+    if (nullptr != CO_CABR)
+    {
+        // It is necessary to allocate buffer for bitstream output data
+        if (CO_CABR->bBsOut)
+        {
+            // allocate maximim allowable buffer for bitstream
+            int size = par->mfx.FrameInfo.Width * par->mfx.FrameInfo.Height;
+            if (nullptr == m_bits_sysmem)
+                m_bits_sysmem = new mfxU8[(size) + DALIGN_4096];
+
+            m_bitstr = m_bits_sysmem + DALIGN_4096 - (uintptr_t)m_bits_sysmem % DALIGN_4096;
+
+            m_bBsOut = true;
+        }
+
+        // It is necessary to allocate buffer for reconstructed frame
+        if (CO_CABR->bRecOut)
+        {
+
+            int size_y = par->mfx.FrameInfo.Width * par->mfx.FrameInfo.Height;
+            if (nullptr == m_recon_sysmem)
+                m_recon_sysmem = new mfxU8[(size_y) * 3 + DALIGN_4096 * 3];// YUV 444
+
+            m_recon_y = m_recon_sysmem + DALIGN_4096 - (uintptr_t)m_recon_sysmem % DALIGN_4096;
+
+            m_recon_uv = m_recon_y + size_y;
+            m_recon_uv = m_recon_uv + DALIGN_4096 - (uintptr_t)m_recon_uv % DALIGN_4096;
+
+            m_bRecOut = true;
+        }
+
+    }
+
+
 
     eMFXHWType platform = m_core->GetHWType();
     m_vpar = MfxVideoParam(*par, platform);
@@ -1047,6 +1087,99 @@ void SetEncFrameInfo(MfxVideoParam &m_vpar,
     }
 }
 
+mfxStatus  MFXVideoENCODEH265_HW::CopyBitStreamOut(Task* taskForQuery, mfxBitstream* bs, ENCODE_PACKEDHEADER_DATA* pSEI, mfxU32 SEI_len)
+{
+    mfxStatus sts = MFX_ERR_NONE;
+
+    mfxFrameData codedFrame = {};
+    mfxU32 bytes2copy = taskForQuery->m_bsDataLength;
+    mfxU8* bsData = bs->Data + bs->DataOffset + bs->DataLength;
+    mfxU32 offset = 0;
+    mfxU32 bytesAvailable = bs->MaxLength - bs->DataOffset - bs->DataLength;
+
+    sts = m_core->LockFrame(taskForQuery->m_midBs, &codedFrame);
+
+    MFX_CHECK_STS(sts);
+    MFX_CHECK(codedFrame.Y, MFX_ERR_LOCK_MEMORY);
+
+    mfxSize roi = { (int32_t)bytes2copy, 1 };
+    FastCopy::Copy(m_bitstr, bytes2copy, codedFrame.Y, codedFrame.Pitch, roi, COPY_VIDEO_TO_SYS);
+
+    sts = m_core->UnlockFrame(taskForQuery->m_midBs, &codedFrame);
+    MFX_CHECK_STS(sts);
+
+    offset += bytes2copy;
+    bytesAvailable -= bytes2copy;
+    bytes2copy = 0;
+
+    if (SEI_len)
+    {
+        MFX_CHECK(bytesAvailable >= pSEI->DataLength, MFX_ERR_NOT_ENOUGH_BUFFER);
+
+        std::copy(pSEI->pData + pSEI->DataOffset, pSEI->pData + pSEI->DataOffset + pSEI->DataLength, m_bitstr);
+
+        offset += pSEI->DataLength;
+        bytesAvailable -= pSEI->DataLength;
+    }
+
+    if (taskForQuery->m_minFrameSize > offset)
+    {
+        mfxU32 padding = taskForQuery->m_minFrameSize - offset;
+        MFX_CHECK(bytesAvailable >= padding, MFX_ERR_NOT_ENOUGH_BUFFER);
+        memset(codedFrame.Y + offset, 0, padding);
+        offset += padding;
+        bytesAvailable -= padding;
+    }
+
+    m_vpar.m_ext.CO_CABR.pbs = m_bitstr;
+    m_vpar.m_ext.CO_CABR.pbs_len = offset;
+
+    return sts;
+}
+
+mfxStatus  MFXVideoENCODEH265_HW::CopyReconNV12Out(Task* taskForQuery)
+{
+    mfxStatus sts = MFX_ERR_NONE;
+
+    mfxFrameData codedFrame1 = {};
+
+    mfxI32 plane_w = taskForQuery->m_surf->Info.CropW;
+    mfxI32 plane_h = taskForQuery->m_surf->Info.CropH;
+    mfxI32 start_X = taskForQuery->m_surf->Info.CropX;
+    mfxI32 start_Y = taskForQuery->m_surf->Info.CropY;
+
+    sts = m_core->LockFrame(taskForQuery->m_midRec, &codedFrame1);
+    MFX_CHECK_STS(sts);
+
+    mfxI32 offset = start_Y * codedFrame1.Pitch + start_X;
+    mfxI32 offsetUV = (start_Y / 2) * codedFrame1.Pitch + start_X;
+
+    if (MFX_FOURCC_NV12 == taskForQuery->m_surf->Info.FourCC)
+    {
+        mfxSize roi_recY = { (int32_t)plane_w, (int32_t)plane_h };
+        FastCopy::Copy(m_recon_y, plane_w, codedFrame1.Y + offset, codedFrame1.Pitch, roi_recY, COPY_VIDEO_TO_SYS);
+
+        mfxSize roi_recUV = { (int32_t)plane_w, (int32_t)(plane_h/2) };
+        FastCopy::Copy(m_recon_uv, plane_w, codedFrame1.UV + offsetUV, codedFrame1.Pitch, roi_recUV, COPY_VIDEO_TO_SYS);
+
+        m_vpar.m_ext.CO_CABR.plane[1] = m_recon_uv;
+    }
+    else 
+    {
+        mfxSize roi_recY = { (int32_t)plane_w, (int32_t)plane_h };
+        FastCopy::Copy(m_recon_y, plane_w, codedFrame1.Y + offset, codedFrame1.Pitch, roi_recY, COPY_VIDEO_TO_SYS);
+
+        m_vpar.m_ext.CO_CABR.plane[1] = nullptr;
+    }
+
+    m_vpar.m_ext.CO_CABR.plane[0] = m_recon_y;
+
+    sts = m_core->UnlockFrame(taskForQuery->m_midRec, &codedFrame1);
+    MFX_CHECK_STS(sts);
+
+    return sts;
+}
+
 mfxStatus  MFXVideoENCODEH265_HW::Execute(mfxThreadTask thread_task, mfxU32 /*uid_p*/, mfxU32 /*uid_a*/)
 {
     MFX_CHECK(m_bInit, MFX_ERR_NOT_INITIALIZED);
@@ -1147,6 +1280,13 @@ mfxStatus  MFXVideoENCODEH265_HW::Execute(mfxThreadTask thread_task, mfxU32 /*ui
 
         if (m_brc)
         {
+            if (m_bBsOut)
+                CopyBitStreamOut(taskForQuery,bs, pSEI, SEI_len);
+
+            if (m_bRecOut)
+                CopyReconNV12Out(taskForQuery);
+
+
             brcStatus = m_brc->PostPackFrame(m_vpar,*taskForQuery, (taskForQuery->m_bsDataLength + SEI_len)*8,0,taskForQuery->m_recode);
             //printf("m_brc->PostPackFrame poc %d, qp %d, len %d, type %d, status %d\n", taskForQuery->m_poc,taskForQuery->m_qpY, taskForQuery->m_bsDataLength,taskForQuery->m_codingType, brcStatus);
             if (brcStatus != MFX_BRC_OK)
@@ -1387,6 +1527,18 @@ void  MFXVideoENCODEH265_HW::FreeResources()
     {
         delete m_brc;
         m_brc = nullptr;
+    }
+
+    if (m_bBsOut)
+    {
+        delete[] m_bits_sysmem;
+        m_bits_sysmem = nullptr;
+    }
+
+    if (m_bRecOut) 
+    {
+        delete[] m_recon_sysmem;
+        m_recon_sysmem = nullptr;
     }
 }
 

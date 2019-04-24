@@ -269,16 +269,21 @@ public:
     {
         return m_pBRC->Reset(m_pBRC->pthis,&video);    
     }
-    virtual mfxBRCStatus PostPackFrame(MfxVideoParam &, Task &task, mfxI32 bitsEncodedFrame, mfxI32 , mfxI32 )
+    virtual mfxBRCStatus PostPackFrame(MfxVideoParam &pr, Task &task, mfxI32 bitsEncodedFrame, mfxI32 , mfxI32 )
     {
         mfxBRCFrameParam frame_par={};
         mfxBRCFrameCtrl  frame_ctrl={};
         mfxBRCFrameStatus frame_sts = {};
+
+        mfxExtCodingOptionCABR ext_bsrec = pr.m_ext.CO_CABR;
+        mfxExtBuffer *    ext_param[] = { &ext_bsrec.Header };
         
 
         frame_ctrl.QpY = task.m_qpY;
         InitFramePar(task,frame_par);
         frame_par.CodedFrameSize = bitsEncodedFrame/8;  // Size of frame in bytes after encoding
+        frame_par.NumExtParam = 1;
+        frame_par.ExtParam = ext_param;
 
 
         mfxStatus sts = m_pBRC->Update(m_pBRC->pthis,&frame_par, &frame_ctrl, &frame_sts);

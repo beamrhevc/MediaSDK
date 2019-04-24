@@ -323,7 +323,7 @@ protected:
 #undef IPP_MIN
 class ExtBRC
 {
-private:
+protected:
     cBRCParams m_par;
     cHRD       m_hrd;
     bool       m_bInit;
@@ -342,8 +342,9 @@ public:
     mfxStatus Init (mfxVideoParam* par);
     mfxStatus Reset(mfxVideoParam* par);
     mfxStatus Close () {m_bInit = false; return MFX_ERR_NONE;}
-    mfxStatus GetFrameCtrl (mfxBRCFrameParam* par, mfxBRCFrameCtrl* ctrl);
-    mfxStatus Update (mfxBRCFrameParam* par, mfxBRCFrameCtrl* ctrl, mfxBRCFrameStatus* status);
+    virtual mfxStatus GetFrameCtrl (mfxBRCFrameParam* par, mfxBRCFrameCtrl* ctrl);
+    virtual mfxStatus Update (mfxBRCFrameParam* par, mfxBRCFrameCtrl* ctrl, mfxBRCFrameStatus* status);
+    virtual ~ExtBRC() {};
 protected:
     mfxI32 GetCurQP (mfxU32 type, mfxI32 layer);
 };

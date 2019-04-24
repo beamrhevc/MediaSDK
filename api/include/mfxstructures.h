@@ -799,6 +799,19 @@ typedef struct {
     mfxU16      reserved[163];
 } mfxExtCodingOption3;
 
+typedef struct {
+    mfxExtBuffer Header;
+
+    mfxU16       bBsOut; 
+    mfxU16       bRecOut;
+
+    mfxU8       *pbs;
+    mfxU32       pbs_len;
+
+    mfxU8       * plane[2]; /* allocated Y and UV frame data (NV12, width*height, 8 bit) */
+
+}mfxExtCodingOptionCABR;
+
 /* IntraPredBlockSize/InterPredBlockSize */
 enum {
     MFX_BLOCKSIZE_UNKNOWN   = 0,
@@ -859,6 +872,7 @@ enum {
     MFX_EXTBUFF_DEC_VIDEO_PROCESSING            = MFX_MAKEFOURCC('D','E','C','V'),
     MFX_EXTBUFF_VPP_FIELD_PROCESSING            = MFX_MAKEFOURCC('F','P','R','O'),
     MFX_EXTBUFF_CODING_OPTION3                  = MFX_MAKEFOURCC('C','D','O','3'),
+    MFX_EXTBUFF_CODING_OPTION_CABR              = MFX_MAKEFOURCC('C','A','B','R'),
     MFX_EXTBUFF_CHROMA_LOC_INFO                 = MFX_MAKEFOURCC('C','L','I','N'),
     MFX_EXTBUFF_MBQP                            = MFX_MAKEFOURCC('M','B','Q','P'),
     MFX_EXTBUFF_MB_FORCE_INTRA                  = MFX_MAKEFOURCC('M','B','F','I'),
